@@ -318,7 +318,13 @@
         position:fixed; left:0; right:0; bottom:0; z-index:80; background:var(--surface); color:var(--text);
         border-radius:24px 24px 0 0; padding:20px 20px calc(18px + env(safe-area-inset-bottom));
         transform:translateY(105%); transition:transform .28s cubic-bezier(.32,.72,.28,1);
-        max-height:92dvh; overflow-y:auto;
+        /* dvh 是 Chrome 108+ 才认的单位。老 WebView（国内不少机器还停在 8x/9x/10x 内核）
+           会把这一行整条丢掉，面板就没有 max-height：内容比屏幕高、又贴着 bottom:0，
+           顶上一截被顶出屏幕，而且因为没有溢出也就没有滚动条——
+           表现就是「打开设置直接看到最底下，还怎么都划不上去，Key 输入框够不着」。
+           所以先用 vh 兜底，dvh 只是能拿到动态视口时的锦上添花。 */
+        max-height:92vh; max-height:92dvh;
+        overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
       }
       #settings.open{ transform:translateY(0); }
       @media (min-width:640px){
@@ -535,7 +541,7 @@
       </div>
 
       <p class="hint" style="margin-bottom:0">Key 和对话记录都只保存在这台设备的浏览器本地，不会存到任何服务器；请求由你的浏览器直连 DeepSeek 官方接口。另：DeepSeek 对话 API 本身不提供联网搜索，开启「联网搜索」后发送时会提醒你，回答仍来自模型本身。</p>
-      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.2 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
+      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.3 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
 
       <div id="testResult"></div>
       <div class="btn-row">
@@ -1206,8 +1212,15 @@
           var memEl = $("memoryInput"); if(memEl) memEl.value = state.memory || "";
           $("testResult").className = ""; $("testResult").textContent = "";
           modalOverlay.classList.add("show"); settingsEl.classList.add("open");
+          /* 每次都从顶部开始，免得上一次的口位置留着，一打开就是「最底下」。
+             再让键盘适配那边按当前可见高度重算一次 max-height / bottom。 */
+          settingsEl.scrollTop = 0;
+          if(typeof window.__dskRefit === "function") window.__dskRefit();
         }
-        function closeSettings(){ modalOverlay.classList.remove("show"); settingsEl.classList.remove("open"); }
+        function closeSettings(){
+          modalOverlay.classList.remove("show"); settingsEl.classList.remove("open");
+          settingsEl.style.maxHeight = ""; settingsEl.style.bottom = "";
+        }
         function updateKeyUI(){
           var has = !!state.apiKey;
           $("keyDot").classList.toggle("on", has);
@@ -1882,6 +1895,32 @@
             autoGrow();
           }
 
+          /* 设置面板（#settings）是个贴着底边的抽屉。老内核不认 dvh，CSS 里用 vh 兜底；
+             但 vh 里还含着被键盘盖住的那截，所以这里再按「真正可见的高度」算一次 px。
+             hidden = 当前布局视口里被盖住的高度：
+               adjustResize 机型窗口已经矮了，hidden = 0（不要重复抬）；
+               edge-to-edge 机型窗口没矮，hidden = 键盘高度（抽屉要抬到键盘上方）。 */
+          function fitSettings(r){
+            if(!settingsEl) return;
+            if(!settingsEl.classList.contains("open")){
+              if(settingsEl.style.maxHeight || settingsEl.style.bottom){
+                settingsEl.style.maxHeight = ""; settingsEl.style.bottom = "";
+              }
+              return;
+            }
+            if(r.height > 0){
+              var wantH = Math.round(r.height * 0.92) + "px";
+              if(settingsEl.style.maxHeight !== wantH) settingsEl.style.maxHeight = wantH;
+            }
+            if(window.innerWidth < 640){
+              var hidden = Math.max(0, Math.round(r.layout - r.bottom));
+              var wantB = hidden > KEYBOARD_MIN ? hidden + "px" : "0px";
+              if(settingsEl.style.bottom !== wantB) settingsEl.style.bottom = wantB;
+            } else if(settingsEl.style.bottom){
+              settingsEl.style.bottom = "";
+            }
+          }
+
           function apply(){
             var r = visibleRect();
             if(!r.height) return;
@@ -1898,6 +1937,7 @@
             }
             if(!baseH || r.layout > baseH) baseH = r.layout;
             var kb = baseH - r.bottom;      // 被键盘吃掉的高度
+            fitSettings(r);                 // 设置抽屉跟着可见区域一起缩
 
             if(kb > KEYBOARD_MIN || r.top > 2){
               dock(r.top, r.height);
@@ -1957,6 +1997,9 @@
           /* native 侧（MainActivity）拿到 IME inset 变化就调这个，立刻重排，
              不必等 500ms 轮询；页面拿不到 native 信号时它永远不会被调用。 */
           window.__dskImeChanged = function(){ apply(); };
+          /* 页面内部用（openSettings 打开抽屉后立刻按当前可见区域算一次，
+             不用等下一轮 500ms 轮询）。native 壳不碰这个名字。 */
+          window.__dskRefit = apply;
         }
 
         /* ---------- init ---------- */
