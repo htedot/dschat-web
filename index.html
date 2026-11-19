@@ -19,6 +19,21 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icons/icon-180.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
+
+    <!-- 主题必须在首屏 CSS 生效前定下来，否则深色用户会先看到一帧白闪。
+         这里只做一件事：按本地保存的偏好（跟随系统 / 浅色 / 深色）写 data-theme。 -->
+    <script>
+      (function(){
+        try{
+          var raw = localStorage.getItem("ds_settings");
+          var pref = raw ? (JSON.parse(raw) || {}).theme : "";
+          var sys = !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var t = (pref === "dark" || pref === "light") ? pref : (sys ? "dark" : "light");
+          document.documentElement.setAttribute("data-theme", t);
+        }catch(e){ /* 读不到就交给媒体查询兜底 */ }
+      })();
+    </script>
+    <link rel="icon" href="data:," />
     <title>DeepSeek 聊天</title>
     <style>
       button, [role="button"], select, summary, input:not([type="checkbox"], [type="radio"]) { min-height: 2rem; }
@@ -30,8 +45,18 @@
         --reason-bg:#f7f7fa; --reason-text:#6d7280; --code-bg:#f5f6f8; --error:#e5484d; --error-bg:#fdf0f0;
         --shadow:0 8px 32px rgba(20,24,60,.14); --overlay:rgba(24,25,30,.42);
       }
+      /* 深色配色写两份：`[data-theme="dark"]` 给「手动切深色」，
+         媒体查询那一份只在 JS 没跑起来（或还没写 data-theme）时兜底。
+         两份数值必须一致，改的时候一起改。 */
+      :root[data-theme="dark"]{
+        --bg:#191a1f; --surface:#1f2026; --text:#f0f1f4; --text-2:#9ba0ac; --text-3:#6d7280;
+        --border:#2d2e36; --card-border:#2d2e36; --hover:#26272f; --bubble:#2c3a75;
+        --chip-on-bg:#2c3a75; --chip-on-text:#aebfff; --chip-border:#33343e;
+        --reason-bg:#22232a; --reason-text:#9ba0ac; --code-bg:#24252d; --error-bg:#3a2226;
+        --shadow:0 8px 32px rgba(0,0,0,.5); --overlay:rgba(0,0,0,.55);
+      }
       @media (prefers-color-scheme: dark){
-        :root{
+        :root:not([data-theme]){
           --bg:#191a1f; --surface:#1f2026; --text:#f0f1f4; --text-2:#9ba0ac; --text-3:#6d7280;
           --border:#2d2e36; --card-border:#2d2e36; --hover:#26272f; --bubble:#2c3a75;
           --chip-on-bg:#2c3a75; --chip-on-text:#aebfff; --chip-border:#33343e;
@@ -45,7 +70,8 @@
         font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,"Segoe UI",sans-serif;
         font-size:16px; line-height:1.6; overflow:hidden; overscroll-behavior:none;
       }
-      @media (prefers-color-scheme: dark){ body{ background:#0b0c0f; } }
+      :root[data-theme="dark"] body{ background:#0b0c0f; }
+      @media (prefers-color-scheme: dark){ :root:not([data-theme]) body{ background:#0b0c0f; } }
       #app{ display:flex; flex-direction:column; height:100vh; height:100dvh; max-width:880px; margin:0 auto; position:relative; background:var(--bg); box-shadow:0 0 28px rgba(20,24,60,.08); min-height:0; }
 
       /* ---------- header ---------- */
@@ -189,7 +215,8 @@
       .u-actions{ display:flex; justify-content:flex-end; gap:2px; margin-top:2px; }
       .u-act{ border:0; background:transparent; color:var(--text-2); font-size:12px; font-family:inherit; padding:3px 8px; border-radius:8px; cursor:pointer; opacity:.72; white-space:nowrap; }
       .u-act:hover{ background:rgba(0,0,0,.06); opacity:1; }
-      @media (prefers-color-scheme: dark){ .u-act:hover{ background:rgba(255,255,255,.1); } }
+      :root[data-theme="dark"] .u-act:hover{ background:rgba(255,255,255,.1); }
+      @media (prefers-color-scheme: dark){ :root:not([data-theme]) .u-act:hover{ background:rgba(255,255,255,.1); } }
       .edit-ta{ width:100%; min-width:220px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font:inherit; font-size:15px; line-height:1.6; padding:8px 10px; resize:vertical; white-space:pre-wrap; }
       .edit-row{ display:flex; justify-content:flex-end; gap:8px; margin-top:6px; }
       .edit-ok,.edit-cancel{ border-radius:9px; font:inherit; font-size:13px; padding:5px 12px; cursor:pointer; min-height:32px; }
@@ -248,7 +275,8 @@
         background:var(--surface); padding:12px 12px 9px; transition:border-color .15s;
       }
       .composer:focus-within{ border-color:#c6cbdd; }
-      @media (prefers-color-scheme: dark){ .composer:focus-within{ border-color:#3d4152; } }
+      :root[data-theme="dark"] .composer:focus-within{ border-color:#3d4152; }
+      @media (prefers-color-scheme: dark){ :root:not([data-theme]) .composer:focus-within{ border-color:#3d4152; } }
       .composer textarea{
         width:100%; border:0; outline:0; resize:none; background:transparent; color:var(--text);
         font-family:inherit; font-size:16px; line-height:1.55; max-height:168px; padding:2px 6px; display:block;
@@ -277,7 +305,8 @@
         background:#d9dce4; color:#fff; display:inline-flex; align-items:center; justify-content:center;
         cursor:pointer; transition:background .15s; padding:0;
       }
-      @media (prefers-color-scheme: dark){ .send-btn{ background:#3a3b44; } }
+      :root[data-theme="dark"] .send-btn{ background:#3a3b44; }
+      @media (prefers-color-scheme: dark){ :root:not([data-theme]) .send-btn{ background:#3a3b44; } }
       .send-btn.ready{ background:var(--blue); }
       .send-btn.ready:hover{ background:var(--blue-dark); }
       .send-btn:disabled{ cursor:default; }
@@ -349,6 +378,23 @@
       .steps{ background:var(--reason-bg); border-radius:14px; padding:12px 14px; font-size:13.5px; line-height:1.8; color:var(--text-2); margin-bottom:14px; }
       .steps a{ color:var(--blue); font-weight:600; }
       .btn-row{ display:flex; gap:10px; margin-top:18px; position:sticky; bottom:0; background:var(--surface); padding:10px 0 2px; }
+      /* ---------- 外观：主题分段按钮 ---------- */
+      .seg{ display:flex; gap:4px; background:var(--hover); border-radius:12px; padding:4px; }
+      .seg button{
+        flex:1; border:0; background:transparent; color:var(--text-2); font-family:inherit;
+        font-size:14px; font-weight:600; padding:8px 6px; border-radius:9px; cursor:pointer;
+      }
+      .seg button.on{ background:var(--surface); color:var(--text); box-shadow:0 1px 3px rgba(20,24,60,.14); }
+      :root[data-theme="dark"] .seg button.on{ box-shadow:inset 0 0 0 1px var(--border); }
+      /* ---------- 迁移 ---------- */
+      .import-actions{ display:flex; flex-wrap:wrap; gap:8px; }
+      .import-actions .btn{ flex:1 1 120px; min-width:0; }
+      #importInput{
+        width:100%; border:1.5px solid var(--border); background:var(--bg); color:var(--text);
+        border-radius:12px; padding:10px 12px; font-size:13.5px; line-height:1.6;
+        font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; resize:vertical; outline:0;
+      }
+      #importInput:focus{ border-color:var(--blue); }
       .btn{ flex:1; border-radius:13px; padding:12px; font-size:15px; font-weight:700; cursor:pointer; font-family:inherit; min-height:48px; }
       .btn-ghost{ background:transparent; border:1.5px solid var(--border); color:var(--text); }
       .btn-primary{ background:var(--blue); border:0; color:#fff; }
@@ -540,8 +586,34 @@
         <textarea id="memoryInput" rows="4" placeholder="例如：我叫…，我是做…的；回答请尽量简短，先给结论；代码请用 Python 写，并加上注释。"></textarea>
       </div>
 
+      <hr class="settings-divider" />
+      <h3 class="section-title">外观</h3>
+      <p class="section-hint">「跟随系统」会跟着手机的深色模式自动切，也可以固定成浅色或深色。切换立即生效，不用点保存。</p>
+      <div class="field">
+        <label>主题</label>
+        <div class="seg" id="themeSeg" role="group" aria-label="主题">
+          <button type="button" data-theme-pref="system">跟随系统</button>
+          <button type="button" data-theme-pref="light">浅色</button>
+          <button type="button" data-theme-pref="dark">深色</button>
+        </div>
+      </div>
+
+      <hr class="settings-divider" />
+      <h3 class="section-title">从官方 App 迁移</h3>
+      <p class="section-hint">把官方 App 导出的 JSON、或者直接复制出来的聊天文字粘进来：能认出「我 / AI」交替的对话、本 App 导出的 Markdown，以及带 messages 数组的 JSON。认不出对话时，这段文字会当成「记忆」写进上面那栏。</p>
+      <div class="field">
+        <textarea id="importInput" rows="4" placeholder="粘贴 JSON / 聊天文字 / 记忆清单…&#10;&#10;例：&#10;我：帮我写个冒泡排序&#10;AI：好的，下面是 Python 版本…" spellcheck="false"></textarea>
+      </div>
+      <div class="import-actions">
+        <button type="button" class="btn btn-ghost" id="importFileBtn">选择文件</button>
+        <button type="button" class="btn btn-ghost" id="importPasteBtn">从剪贴板粘贴</button>
+        <button type="button" class="btn btn-primary" id="importRunBtn">识别并导入</button>
+        <input type="file" id="importFile" accept=".json,.txt,.md,application/json,text/plain" hidden />
+      </div>
+      <p class="hint" id="importResult" style="margin-top:8px"></p>
+
       <p class="hint" style="margin-bottom:0">Key 和对话记录都只保存在这台设备的浏览器本地，不会存到任何服务器；请求由你的浏览器直连 DeepSeek 官方接口。另：DeepSeek 对话 API 本身不提供联网搜索，开启「联网搜索」后发送时会提醒你，回答仍来自模型本身。</p>
-      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.3 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
+      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.4 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
 
       <div id="testResult"></div>
       <div class="btn-row">
@@ -571,7 +643,7 @@
         var state = {
           apiKey: "", baseUrl: "https://api.deepseek.com",
           preset: "deepseek-chat", customModel: "", temperature: 1.0,
-          deepThink: false, webSearch: false, memory: "",
+          deepThink: false, webSearch: false, memory: "", theme: "system",
           models: BUILTIN_MODELS.slice(), modelsFetched: false, modelsLoading: false, modelsError: "",
           conversations: [], currentId: null,
           streaming: false, abortCtrl: null
@@ -601,7 +673,7 @@
           return store.set("ds_settings", {
             apiKey: state.apiKey, baseUrl: state.baseUrl, preset: state.preset,
             customModel: state.customModel, temperature: state.temperature, deepThink: state.deepThink,
-            memory: state.memory
+            memory: state.memory, theme: state.theme
           });
         }
         /* 图片 base64 很占地方，只给最近几个对话保留附件实体，
@@ -646,6 +718,45 @@
           }
           store.set("ds_current_id", state.currentId);
         }
+
+        /* ---------- 主题：跟随系统 / 浅色 / 深色 ----------
+           真正的配色在 CSS 里（:root[data-theme="dark"]），这里只负责算出该用哪套、
+           写到 <html> 上，并让设置里的分段按钮跟上。首屏那份 script 已经先写过一次，
+           所以这里改的是「用户中途切换」的情况。 */
+        function systemPrefersDark(){
+          try{ return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches); }catch(e){ return false; }
+        }
+        function resolvedTheme(){
+          var p = state.theme;
+          if(p === "light" || p === "dark") return p;
+          return systemPrefersDark() ? "dark" : "light";
+        }
+        function applyTheme(){
+          var t = resolvedTheme();
+          try{ document.documentElement.setAttribute("data-theme", t); }catch(e){}
+          var seg = $("themeSeg");
+          if(seg && seg.querySelectorAll){
+            var bs = seg.querySelectorAll("button[data-theme-pref]");
+            for(var i=0;i<bs.length;i++){
+              var on = (bs[i].getAttribute("data-theme-pref") || "system") === (state.theme || "system");
+              bs[i].classList.toggle("on", on);
+              bs[i].setAttribute("aria-pressed", on ? "true" : "false");
+            }
+          }
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if(meta) meta.setAttribute("content", t === "dark" ? "#191a1f" : "#ffffff");
+          return t;
+        }
+        applyTheme();
+        (function watchSystemTheme(){
+          try{
+            var mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+            if(!mq) return;
+            var on = function(){ if(!state.theme || state.theme === "system") applyTheme(); };
+            if(mq.addEventListener) mq.addEventListener("change", on);
+            else if(mq.addListener) mq.addListener(on);
+          }catch(e){}
+        })();
         /* 每个对话单独存草稿：切走再切回来，没发出去的字还在 */
         var draftTimer = null;
         function draftKey(){ return "ds_draft_" + (state.currentId || "none"); }
@@ -672,6 +783,7 @@
             if(typeof s.temperature === "number") state.temperature = s.temperature;
             if(typeof s.deepThink === "boolean") state.deepThink = s.deepThink;
             if(typeof s.memory === "string") state.memory = s.memory;
+            if(s.theme === "light" || s.theme === "dark" || s.theme === "system") state.theme = s.theme;
           }
           var cachedModels = store.get("ds_models");
           if(Array.isArray(cachedModels) && cachedModels.length) state.models = mergeModels(cachedModels);
@@ -686,6 +798,7 @@
           var cid = store.get("ds_current_id");
           if(typeof cid === "string") state.currentId = cid;
         })();
+        applyTheme();   // 偏好要等 store 读出来才知道，所以还原之后再定一次主题（首屏 script 只是防白闪）
         trimConversations(1);
 
         /* ---------- toast ---------- */
@@ -1211,6 +1324,8 @@
           $("tempVal").textContent = Number(state.temperature).toFixed(1);
           var memEl = $("memoryInput"); if(memEl) memEl.value = state.memory || "";
           $("testResult").className = ""; $("testResult").textContent = "";
+          var impEl = $("importResult"); if(impEl) impEl.textContent = "";
+          applyTheme();                     // 分段按钮的高亮状态跟着当前主题走
           modalOverlay.classList.add("show"); settingsEl.classList.add("open");
           /* 每次都从顶部开始，免得上一次的口位置留着，一打开就是「最底下」。
              再让键盘适配那边按当前可见高度重算一次 max-height / bottom。 */
@@ -1281,7 +1396,239 @@
             toast("本机保存的 API Key 已清除");
           });
         }
-        /* 这个 WebView 没实现外部浏览器跳转（dex 里没有 shouldOverrideUrlLoading /
+        /* ---------- 从官方 App 迁移：聊天记录 + 记忆 ----------
+           官方导出的结构没有公开文档，各家工具也长得不一样，所以这里不写死字段：
+           JSON 走「递归找带 messages 数组的对象」，纯文本走三条规则
+           （本 App 的 Markdown / 「我：」「AI：」前缀 / 空行分段的问答）。
+           认不出对话时整段当记忆——对用户来说这是最不坏的结果。 */
+        function importTitle(msgs){
+          for(var i=0;i<msgs.length;i++){
+            if(msgs[i].role === "user" && msgs[i].content) return String(msgs[i].content).replace(/\s+/g, " ").slice(0, 24);
+          }
+          for(var j=0;j<msgs.length;j++) if(msgs[j].content) return String(msgs[j].content).replace(/\s+/g, " ").slice(0, 24);
+          return "导入的对话";
+        }
+        function normRole(r){
+          var s = String(r == null ? "" : r).toLowerCase().trim();
+          if(!s) return "";
+          if(/user|human|我|用户|提问|^你$|prompt/.test(s)) return "user";
+          if(/assist|bot|ai|deepseek|助手|模型|回答|gpt|claude/.test(s)) return "assistant";
+          return "";
+        }
+        function importMessage(o){
+          if(typeof o === "string") return { role: "", content: o };
+          if(!o || typeof o !== "object") return null;
+          var role = normRole(o.role != null ? o.role
+            : (o.sender != null ? o.sender
+            : (o.from != null ? o.from
+            : (o.author && o.author.role))));
+          if(!role && typeof o.is_user === "boolean") role = o.is_user ? "user" : "assistant";
+          var c = o.content;
+          if(c == null) c = (o.text != null ? o.text : (o.message != null ? o.message : o.value));
+          if(Array.isArray(c)) c = c.map(function(p){ return (p && (p.text || p.content)) || ""; }).join("\n");
+          if(c && typeof c === "object") c = c.text || c.content || "";
+          c = c == null ? "" : String(c);
+          if(!c && Array.isArray(o.parts)) c = o.parts.map(function(p){ return (p && (p.text || p.content)) || ""; }).join("\n");
+          return { role: role || "", content: c };
+        }
+        function importMessages(list){
+          if(!Array.isArray(list)) return [];
+          var out = [];
+          list.forEach(function(m){
+            var r = importMessage(m);
+            if(r && r.content) out.push(r);
+          });
+          return out;
+        }
+        var IMPORT_MSG_KEYS = ["messages","chat_messages","msgs","history","dialog","records","bubbles","conversation"];
+        function importMessageList(o){
+          for(var i=0;i<IMPORT_MSG_KEYS.length;i++){
+            if(o && Array.isArray(o[IMPORT_MSG_KEYS[i]])) return o[IMPORT_MSG_KEYS[i]];
+          }
+          return null;
+        }
+        function collectConversations(node, depth, out){
+          if(!node || depth > 6) return out;
+          if(Array.isArray(node)){
+            for(var i=0;i<node.length;i++) collectConversations(node[i], depth + 1, out);
+            return out;
+          }
+          if(typeof node !== "object") return out;
+          var list = importMessageList(node);
+          if(list){
+            var msgs = importMessages(list);
+            if(msgs.length){
+              out.push({
+                title: String(node.title || node.name || node.topic || node.subject || "").trim(),
+                messages: msgs
+              });
+              return out;   // 命中就不再往里钻，免得同一条对话被拆成好几份
+            }
+          }
+          for(var k in node){
+            if(!Object.prototype.hasOwnProperty.call(node, k)) continue;
+            if(k === "memory" || k === "memories") continue;
+            collectConversations(node[k], depth + 1, out);
+          }
+          return out;
+        }
+        function collectMemory(node, depth){
+          if(!node || depth > 6) return "";
+          if(Array.isArray(node)){
+            for(var i=0;i<node.length;i++){ var r0 = collectMemory(node[i], depth + 1); if(r0) return r0; }
+            return "";
+          }
+          if(typeof node !== "object") return "";
+          var mv = (node.memory != null) ? node.memory : node.memories;
+          if(mv){
+            if(typeof mv === "string") return mv.trim();
+            if(Array.isArray(mv)) return mv.map(function(x){ return typeof x === "string" ? x : ((x && (x.content || x.text || x.value)) || ""); }).filter(Boolean).join("\n");
+            if(typeof mv === "object") return String(mv.content || mv.text || "").trim();
+          }
+          for(var k in node){
+            if(!Object.prototype.hasOwnProperty.call(node, k)) continue;
+            var r = collectMemory(node[k], depth + 1);
+            if(r) return r;
+          }
+          return "";
+        }
+        var ROLE_LINE = /^\s*(我|用户|你|提问|Human|User|AI|A\.I\.|助手|模型|DeepSeek|Assistant)\s*[:：]\s*([\s\S]*)$/i;
+        function importChatText(text){
+          /* 1) 本 App 自己导出的 Markdown：## 我 / ## DeepSeek 分段 */
+          if(/^##\s*(我|DeepSeek)\s*$/m.test(text)){
+            var parts = text.split(/^##\s*(我|DeepSeek)\s*$/m);
+            var mdMsgs = [];
+            for(var i=1;i<parts.length;i+=2){
+              var body = String(parts[i+1] || "").replace(/^(_附件：.*_\s*)?/m, "").trim();
+              if(!body) continue;
+              mdMsgs.push({ role: parts[i] === "我" ? "user" : "assistant", content: body });
+            }
+            if(mdMsgs.length >= 2) return [{ title: "", messages: mdMsgs }];
+          }
+          /* 2) 每段以「我：」「AI：」「用户：」开头 */
+          var lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+          var cur = null, buf = [], out = [];
+          lines.forEach(function(ln){
+            var m = ln.match(ROLE_LINE);
+            if(m){
+              if(cur) out.push({ role: cur, content: buf.join("\n").trim() });
+              cur = normRole(m[1]) || "user";
+              buf = [m[2]];
+            } else if(cur){
+              buf.push(ln);
+            }
+          });
+          if(cur) out.push({ role: cur, content: buf.join("\n").trim() });
+          out = out.filter(function(x){ return x.content; });
+          if(out.length >= 2) return [{ title: "", messages: out }];
+          /* 3) 没有角色标记：按空行分段，单数段当提问、双数段当回答 */
+          var blocks = String(text).split(/\n\s*\n+/).map(function(s){ return s.trim(); }).filter(Boolean);
+          if(blocks.length >= 2 && blocks.length % 2 === 0){
+            return [{ title: "", messages: blocks.map(function(b, idx){ return { role: idx % 2 ? "assistant" : "user", content: b }; }) }];
+          }
+          return null;
+        }
+        function parseImport(raw){
+          var text = String(raw == null ? "" : raw).trim();
+          if(!text) return { conversations: [], memory: "" };
+          var obj = null;
+          if(text.charAt(0) === "{" || text.charAt(0) === "["){
+            try{ obj = JSON.parse(text); }catch(e){ obj = null; }
+          }
+          if(obj){
+            var cs = collectConversations(obj, 0, []).map(function(c){
+              return { title: c.title || importTitle(c.messages), messages: c.messages };
+            });
+            return { conversations: cs, memory: collectMemory(obj, 0) };
+          }
+          var parsed = importChatText(text);
+          if(!parsed) return { conversations: [], memory: "" };
+          return {
+            conversations: parsed.map(function(c){
+              return { title: c.title || importTitle(c.messages), messages: c.messages };
+            }),
+            memory: ""
+          };
+        }
+        function doImport(raw){
+          var res = parseImport(raw);
+          var outEl = $("importResult");
+          var added = 0, addedMsgs = 0, skipped = 0;
+          res.conversations.forEach(function(c){
+            var dup = state.conversations.some(function(old){
+              if(!old || !old.messages || !old.messages.length) return false;
+              if(old.title !== c.title) return false;
+              return String(old.messages[0].content || "").trim() === String(c.messages[0].content || "").trim();
+            });
+            if(dup){ skipped++; return; }
+            state.conversations.unshift({ id: uid(), title: c.title || "导入的对话", messages: c.messages });
+            added++; addedMsgs += c.messages.length;
+          });
+          if(added) state.currentId = state.conversations[0].id;
+
+          var memText = String(res.memory || "").trim();
+          if(!added && !memText) memText = String(raw == null ? "" : raw).trim();   // 认不出对话就把整段当记忆
+          var memAdded = false;
+          if(memText && state.memory.indexOf(memText) === -1){
+            state.memory = state.memory ? (state.memory + "\n" + memText) : memText;
+            var memEl = $("memoryInput"); if(memEl) memEl.value = state.memory;
+            memAdded = true;
+          }
+          persistSettings();
+          if(added){ persistConvs(); renderAll(); renderHistory(); }
+          var bits = [];
+          if(added) bits.push("导入 " + added + " 个对话、" + addedMsgs + " 条消息");
+          else if(skipped) bits.push("没有新增对话");
+          if(skipped) bits.push(skipped + " 个已经存在");
+          if(memAdded) bits.push("记忆已写入");
+          if(!added && !memAdded) bits.push("试试导出 JSON，或「我：/AI：」格式");
+          if(outEl) outEl.textContent = (added || memAdded ? "✓ " : "！") + bits.join("，");
+          toast(added ? ("已导入 " + added + " 个对话") : (memAdded ? "已写入记忆" : "没认出来，换种格式再试"), 3600);
+          return { added: added, memAdded: memAdded, skipped: skipped };
+        }
+        window.__dskImport = doImport;   // 测试和以后可能的批量迁移用
+        (function bindAppearanceAndImport(){
+          var seg = $("themeSeg");
+          if(seg) seg.addEventListener("click", function(e){
+            var b = (e.target && e.target.closest) ? e.target.closest("button[data-theme-pref]") : null;
+            if(!b) return;
+            state.theme = b.getAttribute("data-theme-pref") || "system";
+            applyTheme(); persistSettings();
+            toast(state.theme === "system" ? "主题跟随系统" : (state.theme === "dark" ? "已切换到深色" : "已切换到浅色"));
+          });
+          var fileInput = $("importFile"), fileBtn = $("importFileBtn");
+          if(fileBtn && fileInput){
+            fileBtn.addEventListener("click", function(){ fileInput.click(); });
+            fileInput.addEventListener("change", function(){
+              var f = fileInput.files && fileInput.files[0];
+              if(!f) return;
+              var fr = new FileReader();
+              fr.onload = function(){
+                var ta = $("importInput"); if(ta) ta.value = String(fr.result || "");
+                toast("文件已读入，确认后点「识别并导入」");
+              };
+              fr.readAsText(f);
+              fileInput.value = "";
+            });
+          }
+          var pasteBtn = $("importPasteBtn");
+          if(pasteBtn) pasteBtn.addEventListener("click", function(){
+            if(navigator.clipboard && navigator.clipboard.readText){
+              navigator.clipboard.readText().then(function(t){
+                var ta = $("importInput"); if(ta) ta.value = String(t || "");
+                toast("已从剪贴板读入");
+              }, function(){ toast("读不到剪贴板，长按输入框手动粘贴", 3200); });
+            } else { toast("这个环境读不了剪贴板，长按输入框手动粘贴", 3200); }
+          });
+          var runBtn = $("importRunBtn");
+          if(runBtn) runBtn.addEventListener("click", function(){
+            var ta = $("importInput");
+            if(!ta || !ta.value.trim()){ toast("先把要迁移的内容粘进来"); return; }
+            doImport(ta.value);
+          });
+        })();
+
+                /* 这个 WebView 没实现外部浏览器跳转（dex 里没有 shouldOverrideUrlLoading /
            onCreateWindow），所以 target=_blank 点了没反应。
            解决办法：在 WebView 自己内部导航过去 —— MainActivity.onBackPressed 里
            做了 canGoBack() -> goBack()，按返回键就能回到聊天。
