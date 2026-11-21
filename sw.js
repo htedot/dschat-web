@@ -1,6 +1,6 @@
 /* DeepSeek 聊天 网页版 —— 应用外壳缓存。
    只缓存本站静态文件；api.deepseek.com 的请求一律走网络（缓存对话没有意义，还会串号）。 */
-var CACHE = "dschat-shell-v24";
+var CACHE = "dschat-shell-v25";
 var ASSETS = [
   "./",
   "./index.html",
