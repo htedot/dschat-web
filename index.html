@@ -556,7 +556,12 @@
       </div>
 
       <div class="field">
-        <label for="baseUrlInput">接口地址 <span class="sub-label">（一般不用改）</span></label>
+        <label for="providerSelect">服务商 <span class="sub-label">（选「自动识别」就只填 Key）</span></label>
+        <select id="providerSelect"></select>
+      </div>
+
+      <div class="field">
+        <label for="baseUrlInput">接口地址 <span class="sub-label">（识别成功后会自动填好）</span></label>
         <input type="text" id="baseUrlInput" value="https://api.deepseek.com" spellcheck="false" />
       </div>
 
@@ -613,11 +618,12 @@
       <p class="hint" id="importResult" style="margin-top:8px"></p>
 
       <p class="hint" style="margin-bottom:0">Key 和对话记录都只保存在这台设备的浏览器本地，不会存到任何服务器；请求由你的浏览器直连 DeepSeek 官方接口。另：DeepSeek 对话 API 本身不提供联网搜索，开启「联网搜索」后发送时会提醒你，回答仍来自模型本身。</p>
-      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.4 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
+      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.5 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
 
       <div id="testResult"></div>
+      <p class="hint" id="testHint" style="margin-top:0;opacity:.78">「识别并连接」会依次用这把 Key 请求候选平台的 /models 做鉴权校验（只发 Key，不发对话内容），认出是哪家后自动填好接口地址并载入它全部可用模型。</p>
       <div class="btn-row">
-        <button class="btn btn-ghost" id="testBtn">测试连接</button>
+        <button class="btn btn-ghost" id="testBtn">识别并连接</button>
         <button class="btn btn-ghost" id="clearKeyBtn">清除 Key</button>
         <button class="btn btn-primary" id="saveBtn">保存设置</button>
       </div>
@@ -640,8 +646,23 @@
         ];
         function isThinkId(id){ return /reason|think|\br1\b|thinking/i.test(String(id || "")); }
 
+        /* ---------- 已知服务商：填 Key 后自动认出是哪家 ----------
+           都走 OpenAI 兼容协议（GET /models + POST /chat/completions）。
+           顺序就是自动识别的探测顺序：先当前地址，再按这里的先后。 */
+        var PROVIDERS = [
+          { id: "deepseek",       name: "DeepSeek 官方",  base: "https://api.deepseek.com" },
+          { id: "dashscope",      name: "阿里百炼 · 千问", base: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+          { id: "dashscope-intl", name: "百炼 · 国际站",   base: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" },
+          { id: "moonshot",       name: "月之暗面 Kimi",   base: "https://api.moonshot.cn/v1" },
+          { id: "zhipu",          name: "智谱 GLM",        base: "https://open.bigmodel.cn/api/paas/v4" },
+          { id: "siliconflow",    name: "硅基流动",        base: "https://api.siliconflow.cn/v1" },
+          { id: "openrouter",     name: "OpenRouter",      base: "https://openrouter.ai/api/v1" },
+          { id: "qianwen",        name: "千问 AI 平台",    base: "https://api.qianwenai.com/v1" }
+        ];
+
         var state = {
           apiKey: "", baseUrl: "https://api.deepseek.com",
+          provider: "auto", detecting: false,
           preset: "deepseek-chat", customModel: "", temperature: 1.0,
           deepThink: false, webSearch: false, memory: "", theme: "system",
           models: BUILTIN_MODELS.slice(), modelsFetched: false, modelsLoading: false, modelsError: "",
@@ -672,6 +693,7 @@
         function persistSettings(){
           return store.set("ds_settings", {
             apiKey: state.apiKey, baseUrl: state.baseUrl, preset: state.preset,
+            provider: state.provider,
             customModel: state.customModel, temperature: state.temperature, deepThink: state.deepThink,
             memory: state.memory, theme: state.theme
           });
@@ -779,6 +801,7 @@
             if(typeof s.apiKey === "string") state.apiKey = s.apiKey;
             if(typeof s.baseUrl === "string" && s.baseUrl) state.baseUrl = s.baseUrl;
             if(typeof s.preset === "string" && s.preset) state.preset = s.preset;
+            if(typeof s.provider === "string" && s.provider) state.provider = s.provider;
             if(typeof s.customModel === "string") state.customModel = s.customModel;
             if(typeof s.temperature === "number") state.temperature = s.temperature;
             if(typeof s.deepThink === "boolean") state.deepThink = s.deepThink;
@@ -1316,6 +1339,7 @@
         var modalOverlay = $("modalOverlay"), settingsEl = $("settings");
         function openSettings(){
           populateModelSelect();
+          populateProviderSelect();
           $("apiKeyInput").value = state.apiKey;
           $("baseUrlInput").value = state.baseUrl;
           $("presetModel").value = effectiveModel();
@@ -1374,6 +1398,17 @@
             syncModelUI();
           });
         })();
+        /* 手动改了接口地址：把服务商下拉跟着对上，免得显示和实际不一致 */
+        (function(){
+          var inp = $("baseUrlInput"); if(!inp) return;
+          inp.addEventListener("change", function(){
+            var b = String(inp.value || "").trim().replace(/\/+$/, "");
+            if(!b) return;
+            state.baseUrl = b;
+            state.provider = guessProviderByBase(b) || "custom";
+            persistSettings(); populateProviderSelect();
+          });
+        })();
         var clearMemBtn = $("clearMemoryBtn");
         if(clearMemBtn){
           clearMemBtn.addEventListener("click", function(){
@@ -1383,6 +1418,10 @@
         }
         $("saveBtn").addEventListener("click", function(){
           readSettingsForm(); persistSettings(); updateKeyUI(); syncModelUI(); closeSettings();
+          if(state.provider === "auto" && state.apiKey && !state.modelsFetched){
+            detectAndConnect();           // 认出来之后会 toast 告诉你接的是哪家
+            return;
+          }
           fetchModels(true);
           toast(state.memory ? "设置已保存，记忆也会带到每个新对话" : (state.apiKey ? "设置已保存，可以开始聊天了" : "已保存（还没填 Key）"));
         });
@@ -1661,30 +1700,185 @@
           var codeEl = box ? box.querySelector("code") : null;
           copyText(codeEl ? codeEl.textContent : "", "代码已复制");
         });
-        $("testBtn").addEventListener("click", function(){
-          readSettingsForm();
-          var res = $("testResult");
-          if(!state.apiKey){ res.className = "bad"; res.textContent = "先填入 API Key 再测试。"; return; }
-          res.className = "ok"; res.style.color = ""; res.textContent = "正在连接…";
-          fetch(state.baseUrl + "/models", { headers: { "Authorization": "Bearer " + state.apiKey } })
+        /* ---------- 服务商识别：填了 Key 就自己认出是哪家，并加载它的全部模型 ---------- */
+        /* 老 WebView 没有 Promise.finally / AbortController，超时自己包一层 */
+        function withTimeout(p, ms){
+          return new Promise(function(resolve, reject){
+            var t = setTimeout(function(){ reject(new Error("连接超时")); }, ms || 12000);
+            p.then(function(v){ clearTimeout(t); resolve(v); },
+                   function(e){ clearTimeout(t); reject(e); });
+          });
+        }
+        function showTest(msg, cls){
+          var res = $("testResult"); if(!res) return;
+          res.className = cls || ""; res.textContent = msg;
+        }
+        function providerById(id){
+          for(var i=0;i<PROVIDERS.length;i++) if(PROVIDERS[i].id === id) return PROVIDERS[i];
+          return null;
+        }
+        function guessProviderByBase(base){
+          var b = String(base || "").replace(/\/+$/, "");
+          for(var i=0;i<PROVIDERS.length;i++){
+            if(PROVIDERS[i].base.replace(/\/+$/, "") === b) return PROVIDERS[i].id;
+          }
+          return null;
+        }
+        function populateProviderSelect(){
+          var sel = $("providerSelect"); if(!sel) return;
+          sel.innerHTML = "";
+          var auto = document.createElement("option");
+          auto.value = "auto"; auto.textContent = "自动识别（只填 Key 即可）";
+          sel.appendChild(auto);
+          PROVIDERS.forEach(function(p){
+            var o = document.createElement("option");
+            o.value = p.id; o.textContent = p.name;
+            sel.appendChild(o);
+          });
+          var cu = document.createElement("option");
+          cu.value = "custom"; cu.textContent = "自定义地址";
+          sel.appendChild(cu);
+          var want = state.provider || "auto";
+          sel.value = want;
+          if(sel.value !== want) sel.value = "custom";
+        }
+        /* 拿到 /models 的 id 列表；不是 200 就当这家不认这把 Key */
+        function probeBase(base, key){
+          return withTimeout(fetch(base + "/models", { headers: { "Authorization": "Bearer " + key } })
             .then(function(r){
               if(!r.ok) return r.text().then(function(t){ throw new Error(httpErr(r.status, t)); });
               return r.json();
             })
             .then(function(j){
-              var n = (j && j.data) ? j.data.length : 0;
-              res.className = "ok"; res.textContent = "连接成功 ✓ 这个 Key 可以用" + (n ? "，账号可见 " + n + " 个模型。" : "。");
-              if(n){
-                state.models = mergeModels(j.data.map(function(x){ return x && x.id; }).filter(Boolean));
-                state.modelsFetched = true;
-                store.set("ds_models", j.data.map(function(x){ return x && x.id; }).filter(Boolean));
-                renderModelMenu(); syncModelUI();
+              return ((j && j.data) || []).map(function(x){ return x && x.id; }).filter(Boolean);
+            }), 13000);
+        }
+        /* 默认选哪个：跳过向量/重排/语音/画图这些不能聊天的 */
+        function pickDefault(ids){
+          var bad = /embed|rerank|whisper|tts|moderation|dall-e|stable-diffusion|sdxl|flux|^image|image-|audio|video|asr|ocr/i;
+          for(var i=0;i<ids.length;i++) if(!bad.test(ids[i])) return ids[i];
+          return ids[0];
+        }
+        function candidateList(){
+          var out = [], seen = {};
+          function add(id, base, name){
+            var b = String(base || "").trim().replace(/\/+$/, "");
+            if(!b || seen[b]) return;
+            seen[b] = 1;
+            out.push({ id: id, base: b, name: name });
+          }
+          if(state.provider === "custom"){
+            add("custom", state.baseUrl, "自定义地址");
+            return out;
+          }
+          if(state.provider && state.provider !== "auto"){
+            var one = providerById(state.provider);
+            if(one) add(one.id, one.base, one.name);
+            return out;
+          }
+          add("current", state.baseUrl, "当前地址");
+          PROVIDERS.forEach(function(p){ add(p.id, p.base, p.name); });
+          return out;
+        }
+        function applyModels(ids, base){
+          if(base) state.baseUrl = base;
+          if(!ids.length) return 0;
+          state.models = mergeModels(ids);
+          state.modelsFetched = true;
+          store.set("ds_models", ids);
+          if(!findModel(state.preset) && !state.customModel.trim()) state.preset = pickDefault(ids);
+          return ids.length;
+        }
+        function detectAndConnect(){
+          var inp = $("apiKeyInput");
+          var key = String((inp ? inp.value : state.apiKey) || "").trim();
+          if(!key){ showTest("先填入 API Key 再识别。", "bad"); return; }
+          if(state.detecting) return;
+          var list = candidateList();
+          if(!list.length){ showTest("先在「接口地址」里填一个可用的地址。", "bad"); return; }
+          state.detecting = true;
+          var idx = 0, tried = [], lastErr = null;
+          showTest("正在识别…", "ok");
+          function step(){
+            if(idx >= list.length){
+              state.detecting = false;
+              if(list.length === 1){
+                showTest("连接失败：" + friendlyErr(lastErr), "bad");
+                return;
               }
-            })
-            .catch(function(e){
-              res.className = "bad"; res.textContent = "连接失败：" + friendlyErr(e);
+              showTest("没认出这把 Key 属于哪家（已试过 " + tried.join("、") + "）。" +
+                       "可以手动选「服务商」，或检查 Key 有没有复制完整。", "bad");
+              if(!settingsEl.classList.contains("open")) toast("没认出这把 Key 属于哪家，去设置里手动选一下服务商", 4200);
+              return;
+            }
+            var c = list[idx++];
+            showTest("正在尝试 " + c.name + "…", "ok");
+            probeBase(c.base, key).then(function(ids){
+              state.detecting = false;
+              state.provider = (c.id === "current" || c.id === "custom")
+                ? (guessProviderByBase(c.base) || "custom") : c.id;
+              var n = applyModels(ids, c.base);
+              if($("baseUrlInput")) $("baseUrlInput").value = state.baseUrl;
+              persistSettings(); populateProviderSelect(); renderModelMenu(); syncModelUI();
+              showTest("已连接：" + c.name + "，可用模型 " + n + " 个。", "ok");
+              toast("已连接 " + c.name);
+            }, function(err){
+              lastErr = err;
+              tried.push(c.name);
+              step();
             });
+          }
+          step();
+        }
+        $("testBtn").addEventListener("click", function(){
+          readSettingsForm();
+          var fixed = (state.provider !== "auto" && state.provider !== "custom") ? providerById(state.provider) : null;
+          if(!fixed){ detectAndConnect(); return; }
+          if(!state.apiKey){ showTest("先填入 API Key 再测试。", "bad"); return; }
+          showTest("正在连接 " + fixed.name + "…", "ok");
+          probeBase(fixed.base, state.apiKey).then(function(ids){
+            var n = applyModels(ids, fixed.base);
+            if($("baseUrlInput")) $("baseUrlInput").value = fixed.base;
+            persistSettings(); renderModelMenu(); syncModelUI();
+            showTest("连接成功 ✓ " + fixed.name + " 可见 " + n + " 个模型。", "ok");
+          }, function(e){
+            showTest("连接失败：" + friendlyErr(e), "bad");
+          });
         });
+        /* 服务商下拉：选具体某家就直接把地址填好并立刻连一次 */
+        (function(){
+          var sel = $("providerSelect"); if(!sel) return;
+          sel.addEventListener("change", function(){
+            state.provider = sel.value;
+            var p = providerById(sel.value);
+            if(p){
+              state.baseUrl = p.base;
+              state.modelsFetched = false;
+              if($("baseUrlInput")) $("baseUrlInput").value = p.base;
+            }
+            persistSettings();
+            if(state.apiKey.trim()) detectAndConnect();
+          });
+        })();
+        /* Key 粘贴/输入完自动认一次（防抖 700ms），只识别、不改对话 */
+        (function(){
+          var inp = $("apiKeyInput"); if(!inp) return;
+          var timer = null, last = "";
+          function maybe(){
+            var v = String(inp.value || "").trim();
+            if(state.provider !== "auto" || v.length < 16 || /\s/.test(v)) return;
+            if(v === last || state.detecting) return;
+            last = v;
+            readSettingsForm();
+            detectAndConnect();
+          }
+          inp.addEventListener("input", function(){
+            clearTimeout(timer); timer = setTimeout(maybe, 700);
+          });
+          inp.addEventListener("paste", function(){
+            clearTimeout(timer); timer = setTimeout(maybe, 150);
+          });
+        })();
         function httpErr(status, body){
           var msg = "";
           try { var j = JSON.parse(body); msg = (j.error && j.error.message) || j.message || ""; } catch(e){}
