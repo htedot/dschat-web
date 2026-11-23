@@ -250,6 +250,13 @@
       .md .cb-copy:hover{ background:var(--hover); color:var(--text); }
       .md .codeblock pre{ margin:0; border:0; border-radius:0; background:transparent; }
       .msg-meta{ font-size:11.5px; color:var(--text-3); margin-top:6px; letter-spacing:.2px; }
+      .sources{ margin-top:10px; border:1px solid var(--border); border-radius:12px; padding:8px 11px 9px; background:var(--hover); }
+      .sources-head{ font-size:12px; color:var(--text-2); margin-bottom:4px; display:flex; align-items:center; gap:5px; }
+      .sources-head svg{ width:13px; height:13px; }
+      .sources ol{ margin:0; padding-left:18px; }
+      .sources li{ font-size:12.5px; line-height:1.7; color:var(--text-2); }
+      .sources a{ color:var(--blue); text-decoration:none; word-break:break-all; }
+      .search-note{ font-size:11.5px; color:var(--text-3); margin-top:4px; }
       .md blockquote{ margin:.6em 0; padding:2px 14px; color:var(--text-2); border-left:3px solid var(--border); }
       .md table{ border-collapse:collapse; margin:.6em 0; font-size:14px; display:block; overflow-x:auto; }
       .md th,.md td{ border:1px solid var(--border); padding:6px 10px; text-align:left; }
@@ -558,6 +565,7 @@
       <div class="field">
         <label for="providerSelect">服务商 <span class="sub-label">（选「自动识别」就只填 Key）</span></label>
         <select id="providerSelect"></select>
+        <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.78">联网搜索靠服务商自己的能力：千问 / 智谱 / OpenRouter 可直接开；DeepSeek 官方接口没有联网能力，想搜就切到这三家。</p>
       </div>
 
       <div class="field">
@@ -618,7 +626,7 @@
       <p class="hint" id="importResult" style="margin-top:8px"></p>
 
       <p class="hint" style="margin-bottom:0">Key 和对话记录都只保存在这台设备的浏览器本地，不会存到任何服务器；请求由你的浏览器直连 DeepSeek 官方接口。另：DeepSeek 对话 API 本身不提供联网搜索，开启「联网搜索」后发送时会提醒你，回答仍来自模型本身。</p>
-      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.5 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
+      <p class="hint" style="margin-top:6px;margin-bottom:0;opacity:.72">第三方客户端，非 DeepSeek 官方出品 · 版本 2.6 · Key 以明文保存在本机应用数据里，别把手机或备份随便交给别人</p>
 
       <div id="testResult"></div>
       <p class="hint" id="testHint" style="margin-top:0;opacity:.78">「识别并连接」会依次用这把 Key 请求候选平台的 /models 做鉴权校验（只发 Key，不发对话内容），认出是哪家后自动填好接口地址并载入它全部可用模型。</p>
@@ -644,7 +652,14 @@
           { id: "deepseek-chat", label: "DeepSeek Chat", desc: "日常对话、写作、问答，速度快", think: false },
           { id: "deepseek-reasoner", label: "DeepSeek Reasoner", desc: "深度思考，先推理再回答，适合难题", think: true }
         ];
-        function isThinkId(id){ return /reason|think|\br1\b|thinking/i.test(String(id || "")); }
+        /* 各家「思考模型」的命名五花八门：DeepSeek 用 reasoner，千问用 qwq / qwen3，
+           智谱用 glm-z1，Kimi 用 k2-thinking，OpenAI 用 o3-mini / gpt-5，
+           OpenRouter 上一层还会给 id 加 :thinking 后缀。
+           这里只用于给模型列表打「可思考」标记和 thinkChip 选型，
+           判断偏宽一点没关系：最多是切到一个没有思考输出的模型，回答照常。 */
+        function isThinkId(id){
+          return /reason|think|\br1\b|qwen3|qwq|glm-z1|glm-4\.[5-9]|k2-thinking|o[1-4]-|gpt-5/i.test(String(id || ""));
+        }
 
         /* ---------- 已知服务商：填 Key 后自动认出是哪家 ----------
            都走 OpenAI 兼容协议（GET /models + POST /chat/completions）。
@@ -659,6 +674,9 @@
           { id: "openrouter",     name: "OpenRouter",      base: "https://openrouter.ai/api/v1" },
           { id: "qianwen",        name: "千问 AI 平台",    base: "https://api.qianwenai.com/v1" }
         ];
+        /* 支持「把联网开关传给服务端」的几家（其余家没有这个能力，点了也不假装搜过）。
+           放在 PROVIDERS 旁边，因为界面初始化的很早，别让它踩到 var 声明的时序坑。 */
+        var SEARCH_TARGETS = { dashscope: "千问", zhipu: "智谱", openrouter: "OpenRouter" };
 
         var state = {
           apiKey: "", baseUrl: "https://api.deepseek.com",
@@ -822,6 +840,7 @@
           if(typeof cid === "string") state.currentId = cid;
         })();
         applyTheme();   // 偏好要等 store 读出来才知道，所以还原之后再定一次主题（首屏 script 只是防白闪）
+        syncSearchChip();  // 服务商是一个启动时就定下来的，联网搜索按钮的可点状态要跟着它走
         trimConversations(1);
 
         /* ---------- toast ---------- */
@@ -1032,6 +1051,26 @@
           var md = document.createElement("div"); md.className = "md";
           md.innerHTML = m.error ? "" : renderMD(m.content || "");
           body.appendChild(md);
+          if(m.sources && m.sources.length){
+            var srcBox = document.createElement("div"); srcBox.className = "sources";
+            var head = document.createElement("div"); head.className = "sources-head";
+            head.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></svg><span>参考来源</span>';
+            var ol = document.createElement("ol");
+            m.sources.forEach(function(s){
+              var li = document.createElement("li");
+              var a = document.createElement("a");
+              a.href = s.url; a.rel = "noopener";
+              a.textContent = s.title || s.url;
+              li.appendChild(a); ol.appendChild(li);
+            });
+            srcBox.appendChild(head); srcBox.appendChild(ol);
+            body.appendChild(srcBox);
+          }
+          if(m.searchNote){
+            var sNote = document.createElement("div"); sNote.className = "search-note";
+            sNote.textContent = m.searchNote;
+            body.appendChild(sNote);
+          }
           if(m.error){
             var eb = document.createElement("div"); eb.className = "err-box";
             eb.innerHTML = "<div></div>";
@@ -1296,9 +1335,14 @@
           toast("已切到 " + target.label + (wantThink ? "（深度思考）" : ""));
         });
         searchChip.addEventListener("click", function(){
-          state.webSearch = !state.webSearch;
-          searchChip.classList.toggle("on", state.webSearch);
-          searchChip.setAttribute("aria-pressed", state.webSearch ? "true" : "false");
+          var want = !state.webSearch;
+          if(want && !searchMode()){
+            toast("当前服务商（" + (state.provider || "自定义") + "）没有联网能力：切到 千问 / 智谱 / OpenRouter 才能搜（点「识别并连接」会自动切）", 4600);
+            return;
+          }
+          state.webSearch = want;
+          syncSearchChip();
+          if(want) toast("联网搜索已开启：由" + searchModeName() + "自己搜完再回答", 2600);
         });
         var modelMenu = $("modelMenu");
         $("modelBtn").addEventListener("click", function(e){
@@ -1340,6 +1384,7 @@
         function openSettings(){
           populateModelSelect();
           populateProviderSelect();
+          syncSearchChip();
           $("apiKeyInput").value = state.apiKey;
           $("baseUrlInput").value = state.baseUrl;
           $("presetModel").value = effectiveModel();
@@ -1780,6 +1825,47 @@
           PROVIDERS.forEach(function(p){ add(p.id, p.base, p.name); });
           return out;
         }
+        /* ---------- 联网搜索（走服务商自己的搜索，不需要额外 Key） ----------
+           DeepSeek 官方 API 没有联网能力，客户端又没法直接连搜索引擎（浏览器 CORS），
+           所以「联网搜索」只能借服务商的联网开关：
+             · 千问（DashScope 兼容模式）：请求体加 enable_search
+             · 智谱 GLM：tools 里挂 web_search
+             · OpenRouter：plugins 里挂 web
+           其余服务商（含 DeepSeek 官方）打开时明确说不支持，不假装搜过。 */
+        function searchMode(){
+          var b = String(state.baseUrl || ""), p = state.provider || "";
+          if(p === "dashscope" || p === "dashscope-intl" || /dashscope/i.test(b)) return "dashscope";
+          if(p === "zhipu" || /bigmodel\.cn/i.test(b)) return "zhipu";
+          if(p === "openrouter" || /openrouter\.ai/i.test(b)) return "openrouter";
+          return "";
+        }
+        function searchModeName(){
+          var m = searchMode(); return m ? (SEARCH_TARGETS[m] || m) : "";
+        }
+        /* 把联网开关翻译成各家认的请求参数 */
+        function applySearchParams(body){
+          var mode = searchMode();
+          if(mode === "dashscope"){
+            body.enable_search = true;
+            body.search_options = { forced_search: true, search_strategy: "standard" };
+          } else if(mode === "zhipu"){
+            body.tools = [{ type: "web_search", web_search: { enable: true, search_result: true } }];
+          } else if(mode === "openrouter"){
+            body.plugins = [{ id: "web" }];
+          }
+          return mode;
+        }
+        /* 换服务商 / 拉完模型后，把搜索按钮的状态和提示对齐 */
+        function syncSearchChip(){
+          if(typeof searchChip === "undefined" || !searchChip) return false;
+          var ok = !!searchMode();
+          if(state.webSearch && !ok) state.webSearch = false;
+          searchChip.classList.toggle("on", !!(state.webSearch && ok));
+          searchChip.setAttribute("aria-pressed", state.webSearch && ok ? "true" : "false");
+          searchChip.title = ok ? ("联网搜索（由" + searchModeName() + "自己搜索再回答）")
+                                : "当前服务商不支持联网搜索，切到 千问 / 智谱 / OpenRouter 才能用";
+          return ok;
+        }
         function applyModels(ids, base){
           if(base) state.baseUrl = base;
           if(!ids.length) return 0;
@@ -1787,6 +1873,7 @@
           state.modelsFetched = true;
           store.set("ds_models", ids);
           if(!findModel(state.preset) && !state.customModel.trim()) state.preset = pickDefault(ids);
+          syncSearchChip();
           return ids.length;
         }
         function detectAndConnect(){
@@ -1857,6 +1944,7 @@
               if($("baseUrlInput")) $("baseUrlInput").value = p.base;
             }
             persistSettings();
+            syncSearchChip();
             if(state.apiKey.trim()) detectAndConnect();
           });
         })();
@@ -2191,7 +2279,7 @@
             }
             return;
           }
-          if(state.webSearch) toast("联网搜索在 API 模式下不可用，本次由模型直接回答", 3200);
+          if(state.webSearch && !searchMode()){ state.webSearch = false; syncSearchChip(); }
           var conv = currentConv(); if(!conv){ newConversationSilent(); conv = currentConv(); }
           var filesSnapshot = pendingFiles.slice();
           var msg = { role:"user", content:text };
@@ -2218,8 +2306,42 @@
         function stopStream(){
           if(state.abortCtrl){ try{ state.abortCtrl.abort(); }catch(e){} }
         }
+        /* 思考过程的字段名各家不同：DeepSeek 用 reasoning_content，OpenRouter / 智谱
+           用 reasoning，个别兼容实现用 thinking，还有的把片段塞在 reasoning_details[] 里。
+           这里是「深度思考」能显示出来的唯一入口，多认几个字段就能多支持几家。 */
+        function thinkingText(delta){
+          var t = delta.reasoning_content || delta.reasoning || delta.thinking || "";
+          if(!t && delta.reasoning_details && delta.reasoning_details.length){
+            for(var i = 0; i < delta.reasoning_details.length; i++){
+              var d = delta.reasoning_details[i];
+              if(d && (d.text || d.content)) t += (d.text || d.content);
+            }
+          }
+          return t || "";
+        }
+        /* 联网搜索的「参考来源」：千问在 search_info.search_results，
+           智谱在 web_search[]，字段有 title/url 与 title/link 两种写法。 */
+        function collectSources(j, choice, am){
+          if(!am.sources) am.sources = [];
+          var cands = null;
+          if(choice && choice.search_info && choice.search_info.search_results) cands = choice.search_info.search_results;
+          else if(j && j.search_info && j.search_info.search_results) cands = j.search_info.search_results;
+          else if(j && j.web_search && j.web_search.length) cands = j.web_search;
+          else if(choice && choice.web_search && choice.web_search.length) cands = choice.web_search;
+          if(!cands || !cands.length) return;
+          for(var i = 0; i < cands.length; i++){
+            var s = cands[i]; if(!s) continue;
+            var url = s.url || s.link || "";
+            if(!url) continue;
+            var dup = false;
+            for(var k = 0; k < am.sources.length; k++) if(am.sources[k].url === url) dup = true;
+            if(dup) continue;
+            am.sources.push({ title: String(s.title || s.name || s.site_name || url), url: String(url) });
+            if(am.sources.length >= 8) return;
+          }
+        }
         function runAssistant(conv){
-          var am = { role:"assistant", content:"", reasoning:"", reasoningDone:false, streaming:true, error:"" };
+          var am = { role:"assistant", content:"", reasoning:"", reasoningDone:false, streaming:true, error:"", sources:[], searchNote:"" };
           conv.messages.push(am);
           welcomeEl.style.display = "none"; chatEl.hidden = false;
           var node = aiEl(am, true);
@@ -2239,7 +2361,7 @@
 
           var tStart = nowMs(), tFirst = 0;
           state.streaming = true; updateSend();
-          var ctrl = new AbortController(); state.abortCtrl = ctrl;
+          var ctrl = null;
           var finished = false;
 
           function finish(errMsg){
@@ -2260,72 +2382,89 @@
             renderAll(); updateSend();
           }
 
-          fetch(state.baseUrl + "/chat/completions", {
-            method: "POST",
-            signal: ctrl.signal,
-            headers: { "Content-Type":"application/json", "Authorization":"Bearer " + state.apiKey },
-            body: JSON.stringify({
-              model: effectiveModel(),
-              messages: apiMsgs,
-              temperature: state.temperature,
-              stream: true
-            })
-          }).then(function(res){
-            if(!res.ok){
-              return res.text().then(function(t){ throw new Error(httpErr(res.status, t)); });
-            }
-            var reader = res.body.getReader();
-            var decoder = new TextDecoder();
-            var buf = "";
-            function pump(){
-              return reader.read().then(function(r){
-                if(r.done){ finish(""); return; }
-                buf += decoder.decode(r.value, { stream:true });
-                var idx;
-                while((idx = buf.indexOf("\n")) >= 0){
-                  var line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
-                  if(line.indexOf("data:") !== 0) continue;
-                  var data = line.slice(5).trim();
-                  if(data === "[DONE]"){ finish(""); return; }
-                  try{
-                    var j = JSON.parse(data);
-                    var delta = (j.choices && j.choices[0] && j.choices[0].delta) || {};
-                    if(!tFirst && (delta.reasoning_content || delta.content)) tFirst = nowMs();
-                    if(delta.reasoning_content){
-                      am.reasoning += delta.reasoning_content;
-                      if(!reasonNode){
-                        reasonNode = reasonEl(am.reasoning, true, false);
-                        body.insertBefore(reasonNode, mdEl);
-                        mdEl.innerHTML = "";
-                      } else {
-                        reasonNode._text.textContent = am.reasoning;
+          /* 请求体：联网搜索按服务商加参数。有的兼容实现不认这些字段会回 400，
+             那就退回普通请求重来一次，别让用户看到一条红字。 */
+          function baseBody(){
+            return { model: effectiveModel(), messages: apiMsgs, temperature: state.temperature, stream: true };
+          }
+          var smode = state.webSearch ? searchMode() : "";
+          var firstBody = baseBody();
+          if(smode) applySearchParams(firstBody);
+
+          function request(payload, isRetry){
+            ctrl = new AbortController(); state.abortCtrl = ctrl;
+            return fetch(state.baseUrl + "/chat/completions", {
+              method: "POST",
+              signal: ctrl.signal,
+              headers: { "Content-Type":"application/json", "Authorization":"Bearer " + state.apiKey },
+              body: JSON.stringify(payload)
+            }).then(function(res){
+              if(!res.ok){
+                return res.text().then(function(t){
+                  var code = res.status;
+                  if(!isRetry && smode && (code === 400 || code === 422)){
+                    am.searchNote = "这家服务商不认联网搜索参数，已按普通模式回答";
+                    return request(baseBody(), true);
+                  }
+                  throw new Error(httpErr(code, t));
+                });
+              }
+              var reader = res.body.getReader();
+              var decoder = new TextDecoder();
+              var buf = "";
+              function pump(){
+                return reader.read().then(function(r){
+                  if(r.done){ finish(""); return; }
+                  buf += decoder.decode(r.value, { stream:true });
+                  var idx;
+                  while((idx = buf.indexOf("\n")) >= 0){
+                    var line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+                    if(line.indexOf("data:") !== 0) continue;
+                    var data = line.slice(5).trim();
+                    if(data === "[DONE]"){ finish(""); return; }
+                    try{
+                      var j = JSON.parse(data);
+                      var choice = (j.choices && j.choices[0]) || {};
+                      var delta = choice.delta || {};
+                      var rsn = thinkingText(delta);
+                      if(!tFirst && (rsn || delta.content)) tFirst = nowMs();
+                      if(rsn){
+                        am.reasoning += rsn;
+                        if(!reasonNode){
+                          reasonNode = reasonEl(am.reasoning, true, false);
+                          body.insertBefore(reasonNode, mdEl);
+                          mdEl.innerHTML = "";
+                        } else {
+                          reasonNode._text.textContent = am.reasoning;
+                        }
+                        scrollBottom();
                       }
-                      scrollBottom();
-                    }
-                    if(delta.content){
-                      am.content += delta.content;
-                      if(reasonNode && !reasonNode.classList.contains("closed") && am.reasoning){
-                        reasonNode.classList.add("closed");
-                        var spans = reasonNode._head.querySelectorAll("span");
-                        reasonNode._head.innerHTML = "<span>已深度思考</span>" + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-90deg)"><polyline points="6 9 12 15 18 9"/></svg>';
+                      if(delta.content){
+                        am.content += delta.content;
+                        if(reasonNode && !reasonNode.classList.contains("closed") && am.reasoning){
+                          reasonNode.classList.add("closed");
+                          reasonNode._head.innerHTML = "<span>已深度思考</span>" + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(-90deg)"><polyline points="6 9 12 15 18 9"/></svg>';
+                        }
+                        mdEl.innerHTML = renderMD(am.content);
+                        scrollBottom();
                       }
-                      mdEl.innerHTML = renderMD(am.content);
-                      scrollBottom();
-                    }
-                  }catch(e){ /* partial json line, ignore */ }
-                }
-                return pump();
-              });
-            }
-            return pump();
-          }).catch(function(e){
-            if(e && e.name === "AbortError"){
-              if(!am.content && !am.reasoning) am.content = "（已停止生成）";
-              finish("");
-            } else {
-              finish(friendlyErr(e));
-            }
-          });
+                      collectSources(j, choice, am);
+                    }catch(e){ /* partial json line, ignore */ }
+                  }
+                  return pump();
+                });
+              }
+              return pump();
+            }).catch(function(e){
+              if(e && e.name === "AbortError"){
+                if(!am.content && !am.reasoning) am.content = "（已停止生成）";
+                finish("");
+              } else {
+                finish(friendlyErr(e));
+              }
+            });
+          }
+          request(firstBody, false);
         }
 
         /* ---------- 全面屏 / 输入法适配 ---------- */
